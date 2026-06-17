@@ -3,7 +3,7 @@ import { spawn } from "child_process";
 import { WebSocketServer } from "ws";
 import { networkInterfaces } from "os";
 import { initDb, validateToken } from "./db.js";
-import { adminHandler, bootstrap } from "./admin.js";
+import { adminHandler, bootstrap, isAdminSession } from "./admin.js";
 
 initDb();
 bootstrap();
@@ -14,7 +14,8 @@ const wss = new WebSocketServer({ noServer: true });
 httpServer.on("upgrade", (req, socket, head) => {
   const url = new URL(req.url, "http://localhost");
   const token = url.searchParams.get("token");
-  if (!token || !validateToken(token)) {
+  const allowed = (token && validateToken(token)) || isAdminSession(req);
+  if (!allowed) {
     socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
     socket.destroy();
     return;

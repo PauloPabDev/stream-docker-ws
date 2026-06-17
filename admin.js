@@ -51,6 +51,10 @@ function getSession(req) {
   return session;
 }
 
+export function isAdminSession(req) {
+  return getSession(req) !== null;
+}
+
 function createSession(userId, username) {
   const id = randomBytes(16).toString('hex');
   sessions.set(id, { userId, username, expiresAt: Date.now() + SESSION_TTL });
@@ -107,7 +111,7 @@ function send(res, status, body, headers = {}) {
 const STYLE = `
   *{box-sizing:border-box;margin:0;padding:0}
   body{font-family:system-ui,sans-serif;background:#0d1117;color:#c9d1d9;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:1rem}
-  .card{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:2rem;width:100%;max-width:560px}
+  .card{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:2rem;width:100%;max-width:680px}
   h1{color:#f0f6fc;font-size:1.2rem;margin-bottom:1.5rem}
   h2{color:#f0f6fc;font-size:1rem;margin:1.5rem 0 0.75rem}
   input,button{width:100%;padding:0.6rem 0.8rem;border-radius:6px;border:1px solid #30363d;font-size:0.9rem;margin-top:0.5rem}
@@ -129,6 +133,9 @@ const STYLE = `
   .row-form button{width:auto;padding:0.6rem 1rem}
   .logout{float:right;background:none;border:none;color:#8b949e;cursor:pointer;font-size:0.8rem;width:auto;margin:0;padding:0}
   .logout:hover{color:#c9d1d9}
+  .btn-copy{background:#1f6feb;margin-top:0}
+  .btn-copy:hover{background:#388bfd}
+  .btn-copy.copied{background:#238636}
 `;
 
 export function renderLayout(title, body) {
@@ -166,7 +173,12 @@ function renderDashboard(session, tokens, newToken = null) {
   const rows = tokens.map((t) => `
     <tr>
       <td>${escHtml(t.label)}</td>
-      <td><code style="font-family:monospace;color:#79c0ff">${escHtml(t.preview)}</code></td>
+      <td>
+        <span class="token-preview" data-token="${escHtml(t.token)}">
+          <code style="font-family:monospace;color:#79c0ff">${escHtml(t.preview)}</code>
+          <button class="btn-sm btn-copy" onclick="copyToken(this)" style="margin-left:0.4rem">Copiar</button>
+        </span>
+      </td>
       <td>${t.last_used ? new Date(t.last_used * 1000).toLocaleString() : '—'}</td>
       <td>
         <form method="post" action="/api/tokens/delete" style="display:inline">
@@ -180,14 +192,32 @@ function renderDashboard(session, tokens, newToken = null) {
     ? `<div class="banner">Token creado. <strong>Cópialo ahora</strong>, no se mostrará de nuevo:<br><br><code>${escHtml(newToken)}</code></div>`
     : '';
 
-  return renderLayout('Admin — Tokens', `
-    <h1>Docker Stats — Admin
-      <form method="post" action="/logout" style="display:inline">
+  return renderLayout('Admin — Docker Stats', `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem">
+      <h1 style="margin:0">Docker Stats — Admin</h1>
+      <form method="post" action="/logout">
         <button class="logout" type="submit">Cerrar sesión (${escHtml(session.username)})</button>
       </form>
-    </h1>
+    </div>
+
     ${banner}
-    <h2>Tokens de API</h2>
+
+    <h2>Contenedores en tiempo real</h2>
+    <p id="ws-status" style="font-size:0.8rem;color:#8b949e;margin:0.4rem 0 0.6rem">Conectando...</p>
+    <div style="overflow-x:auto">
+      <table id="stats-table">
+        <thead>
+          <tr>
+            <th>Nombre</th><th>CPU</th><th>Memoria</th><th>Uso Memoria</th><th>Red</th><th>Disco</th><th>PIDs</th>
+          </tr>
+        </thead>
+        <tbody id="stats-body">
+          <tr><td colspan="7" style="color:#8b949e;text-align:center">Esperando datos...</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h2 style="margin-top:1.5rem">Tokens de API</h2>
     ${tokens.length
       ? `<table><thead><tr><th>Nombre</th><th>Preview</th><th>Último uso</th><th></th></tr></thead><tbody>${rows}</tbody></table>`
       : '<p style="color:#8b949e;font-size:0.85rem;margin-top:0.5rem">No hay tokens. Crea uno abajo.</p>'
@@ -199,6 +229,57 @@ function renderDashboard(session, tokens, newToken = null) {
         <button type="submit">Crear</button>
       </div>
     </form>
+
+    <script>
+      (function () {
+        const statusEl = document.getElementById('ws-status');
+        const tbody = document.getElementById('stats-body');
+        let ws, retryMs = 1000;
+
+        function connect() {
+          ws = new WebSocket('ws://' + location.host);
+          ws.onopen = () => {
+            retryMs = 1000;
+            statusEl.textContent = 'Conectado';
+            statusEl.style.color = '#3fb950';
+          };
+          ws.onclose = () => {
+            statusEl.textContent = 'Desconectado — reconectando en ' + (retryMs / 1000) + 's...';
+            statusEl.style.color = '#f85149';
+            setTimeout(connect, retryMs);
+            retryMs = Math.min(retryMs * 2, 10000);
+          };
+          ws.onmessage = (e) => {
+            let data;
+            try { data = JSON.parse(e.data); } catch { return; }
+            if (!Array.isArray(data) || !data.length) {
+              tbody.innerHTML = '<tr><td colspan="7" style="color:#8b949e;text-align:center">Sin contenedores activos</td></tr>';
+              return;
+            }
+            tbody.innerHTML = data.map(c => \`<tr>
+              <td>\${c.Name}</td>
+              <td>\${c.CPUPerc}</td>
+              <td>\${c.MemPerc}</td>
+              <td>\${c.MemUsage}</td>
+              <td>\${c.NetIO}</td>
+              <td>\${c.BlockIO}</td>
+              <td>\${c.PIDs}</td>
+            </tr>\`).join('');
+          };
+        }
+
+        connect();
+      })();
+
+      function copyToken(btn) {
+        const token = btn.closest('.token-preview').dataset.token;
+        navigator.clipboard.writeText(token).then(() => {
+          btn.textContent = 'Copiado!';
+          btn.classList.add('copied');
+          setTimeout(() => { btn.textContent = 'Copiar'; btn.classList.remove('copied'); }, 2000);
+        });
+      }
+    </script>
   `);
 }
 
