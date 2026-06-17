@@ -145,7 +145,37 @@
     header h1 {
       font-size: 1rem;
       color: var(--blue);
+    }
+
+    #url-display {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
       flex: 1;
+    }
+
+    #url-text {
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      font-family: monospace;
+      cursor: pointer;
+      border-bottom: 1px dashed transparent;
+      transition: border-color 0.15s, color 0.15s;
+    }
+
+    #url-text:hover { color: var(--blue); border-bottom-color: var(--blue); }
+
+    #url-edit-input {
+      display: none;
+      font-size: 0.78rem;
+      font-family: monospace;
+      background: var(--bg);
+      color: var(--text);
+      border: 1px solid var(--blue);
+      border-radius: 4px;
+      padding: 0.2rem 0.5rem;
+      outline: none;
+      width: 260px;
     }
 
     .status-dot {
@@ -263,6 +293,10 @@
     <header>
       <div class="status-dot" id="dot"></div>
       <h1>Docker Stats</h1>
+      <div id="url-display">
+        <span id="url-text" title="Clic para cambiar URL" onclick="startEditUrl()"></span>
+        <input id="url-edit-input" type="text" placeholder="ws://host:8081" />
+      </div>
       <span id="status-text">Conectando...</span>
       <span id="last-update"></span>
       <button class="disconnect" onclick="disconnect()">Desconectar</button>
@@ -395,6 +429,39 @@
         .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
     }
 
+    const urlText      = document.getElementById('url-text');
+    const urlEditInput = document.getElementById('url-edit-input');
+
+    function startEditUrl() {
+      urlText.style.display = 'none';
+      urlEditInput.style.display = 'inline-block';
+      urlEditInput.value = localStorage.getItem(LS_URL) || '';
+      urlEditInput.focus();
+      urlEditInput.select();
+    }
+
+    function commitEditUrl() {
+      const newUrl = urlEditInput.value.trim();
+      urlEditInput.style.display = 'none';
+      urlText.style.display = '';
+      if (newUrl && newUrl !== localStorage.getItem(LS_URL)) {
+        urlInput.value = newUrl;
+        localStorage.setItem(LS_URL, newUrl);
+        clearTimeout(retryTimer);
+        retryMs = 1000;
+        connect();
+      }
+    }
+
+    urlEditInput.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); commitEditUrl(); }
+      if (e.key === 'Escape') {
+        urlEditInput.value = localStorage.getItem(LS_URL) || '';
+        urlEditInput.blur();
+      }
+    });
+    urlEditInput.addEventListener('blur', commitEditUrl);
+
     function setConnected(yes) {
       dot.className = 'status-dot' + (yes ? ' on' : '');
       statusText.textContent = yes ? 'Conectado' : 'Desconectado';
@@ -427,6 +494,8 @@
         setConnected(true);
         connectBtn.disabled = false;
         connectBtn.textContent = 'Conectar';
+        urlText.textContent = rawUrl;
+        urlText.title = 'Clic para cambiar URL';
       };
 
       ws.onclose = (e) => {
