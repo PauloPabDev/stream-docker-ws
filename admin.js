@@ -256,7 +256,7 @@ function renderDashboard(session, tokens, newToken = null) {
         }
 
         function connect() {
-          ws = new WebSocket('ws://' + location.host);
+          ws = new WebSocket((location.protocol === 'https:' ? 'wss' : 'ws') + '://' + location.host);
           ws.onopen = () => {
             retryMs = 1000;
             statusEl.textContent = 'Conectado';
