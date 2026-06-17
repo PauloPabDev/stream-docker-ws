@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Monitor Docker en tiempo real</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #0d1117;
+      color: #c9d1d9;
+      margin: 0;
+      padding: 20px;
+    }
+
+    h1 {
+      text-align: center;
+      color: #58a6ff;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 20px;
+      background-color: #161b22;
+    }
+
+    th, td {
+      padding: 10px;
+      border: 1px solid #30363d;
+      text-align: left;
+    }
+
+    th {
+      background-color: #21262d;
+      color: #58a6ff;
+    }
+
+    tr:hover {
+      background-color: #1f6feb22;
+    }
+
+    #status {
+      text-align: center;
+      padding: 10px;
+      margin-bottom: 10px;
+    }
+
+    .connected { color: #3fb950; }
+    .disconnected { color: #f85149; }
+  </style>
+</head>
+<body>
+  <h1>📊 Monitor de contenedores Docker</h1>
+  <div id="status" class="disconnected">⏳ Conectando...</div>
+
+  <table id="statsTable">
+    <thead>
+      <tr>
+        <th>Nombre</th>
+        <th>CPU</th>
+        <th>Memoria</th>
+        <th>Uso Memoria</th>
+        <th>Red (NetIO)</th>
+        <th>Bloques (BlockIO)</th>
+        <th>PIDs</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+
+  <script>
+    const wsHost = window.location.hostname || "localhost";
+    const ws = new WebSocket(`ws://${wsHost}:8081`);
+    const statusEl = document.getElementById("status");
+    const tbody = document.querySelector("#statsTable tbody");
+
+    ws.onopen = () => {
+      statusEl.textContent = "🟢 Conectado al servidor WebSocket";
+      statusEl.className = "connected";
+    };
+
+    ws.onclose = () => {
+      statusEl.textContent = "🔴 Desconectado del servidor";
+      statusEl.className = "disconnected";
+    };
+
+    ws.onmessage = (event) => {
+      let data;
+      try {
+        data = JSON.parse(event.data);
+        console.log("Datos recibidos:", data);
+      } catch (err) {
+        console.error("Error al parsear JSON:", err);
+        return;
+      }
+
+      // Limpia la tabla
+      tbody.innerHTML = "";
+
+      data.forEach((container) => {
+        const tr = document.createElement("tr");
+
+        tr.innerHTML = `
+          <td>${container.Name}</td>
+          <td>${container.CPUPerc}</td>
+          <td>${container.MemPerc}</td>
+          <td>${container.MemUsage}</td>
+          <td>${container.NetIO}</td>
+          <td>${container.BlockIO}</td>
+          <td>${container.PIDs}</td>
+        `;
+
+        tbody.appendChild(tr);
+      });
+    };
+  </script>
+</body>
+</html>

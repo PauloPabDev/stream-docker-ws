@@ -1,0 +1,22 @@
+{
+  "name": "stream-docker-ws",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "un server de ws, para servir los datos de docker stats",
+  "main": "server.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "dev": "nodemon server.js",
+    "start": "node server.js"
+  },
+  "keywords": [
+    "ws",
+    "docker",
+    "view"
+  ],
+  "author": "PedroPab",
+  "license": "MIT",
+  "dependencies": {
+    "ws": "^8.18.3"
+  }
+}
