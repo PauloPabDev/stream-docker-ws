@@ -267,6 +267,11 @@
       <span id="last-update"></span>
       <button class="disconnect" onclick="disconnect()">Desconectar</button>
     </header>
+    <div id="host-bar" style="display:none;gap:1.5rem;background:#161b22;border-bottom:1px solid #30363d;padding:0.5rem 1.5rem;font-size:0.8rem;color:#8b949e">
+      Host — CPU: <strong id="h-cpu" style="color:#79c0ff">—</strong>
+      &nbsp;|&nbsp; RAM: <strong id="h-mem-used" style="color:#79c0ff">—</strong> / <strong id="h-mem-total" style="color:#c9d1d9">—</strong>
+      (<strong id="h-mem-pct" style="color:#79c0ff">—</strong>)
+    </div>
     <div class="table-wrap">
       <table>
         <thead>
@@ -341,12 +346,28 @@
       return `<span class="${cls} ${level}" style="width:${w}px" title="${w}%"></span>`;
     }
 
+    function parseMemBytes(s) {
+      const m = String(s).match(/^([\d.]+)\s*(B|KiB|MiB|GiB|TiB|kB|MB|GB|TB)/i);
+      if (!m) return 0;
+      const v = parseFloat(m[1]);
+      const map = { b:1, kib:1024, mib:1024**2, gib:1024**3, tib:1024**4, kb:1e3, mb:1e6, gb:1e9, tb:1e12 };
+      return v * (map[m[2].toLowerCase()] || 1);
+    }
+
+    function fmtBytes(b) {
+      if (b >= 1024**3) return (b / 1024**3).toFixed(2) + 'GiB';
+      if (b >= 1024**2) return (b / 1024**2).toFixed(2) + 'MiB';
+      return (b / 1024).toFixed(2) + 'KiB';
+    }
+
     function renderRows(data) {
       if (!data.length) {
         tbody.innerHTML = '<tr id="empty-row"><td colspan="7">Sin contenedores activos</td></tr>';
         return;
       }
-      tbody.innerHTML = data.map(c => {
+      const totalCpu = data.reduce((s, c) => s + pct(c.CPUPerc), 0);
+      const totalMem = data.reduce((s, c) => s + parseMemBytes((c.MemUsage || '').split('/')[0].trim()), 0);
+      const rows = data.map(c => {
         const cpu = pct(c.CPUPerc);
         const mem = pct(c.MemPerc);
         return `<tr>
@@ -359,6 +380,14 @@
           <td>${esc(c.PIDs)}</td>
         </tr>`;
       }).join('');
+      const totalRow = `<tr style="border-top:2px solid #58a6ff;font-weight:600;color:#f0f6fc;background:#0d1117">
+        <td>TOTAL (${data.length})</td>
+        <td>${totalCpu.toFixed(1)}%</td>
+        <td>—</td>
+        <td>${fmtBytes(totalMem)}</td>
+        <td colspan="3"></td>
+      </tr>`;
+      tbody.innerHTML = rows + totalRow;
     }
 
     function esc(s) {
@@ -428,13 +457,20 @@
       ws.onerror = () => {};
 
       ws.onmessage = (e) => {
-        let data;
-        try { data = JSON.parse(e.data); } catch { return; }
-        if (Array.isArray(data)) {
-          renderRows(data);
-          const now = new Date();
-          lastUpdate.textContent = 'actualizado ' + now.toLocaleTimeString();
+        let payload;
+        try { payload = JSON.parse(e.data); } catch { return; }
+        const containers = Array.isArray(payload) ? payload : (payload.containers || []);
+        const host = payload.host || null;
+        if (host) {
+          const bar = document.getElementById('host-bar');
+          bar.style.display = 'flex';
+          document.getElementById('h-cpu').textContent = host.cpuPercent;
+          document.getElementById('h-mem-used').textContent = host.memUsed;
+          document.getElementById('h-mem-total').textContent = host.memTotal;
+          document.getElementById('h-mem-pct').textContent = host.memPercent;
         }
+        renderRows(containers);
+        lastUpdate.textContent = 'actualizado ' + new Date().toLocaleTimeString();
       };
     }
 
