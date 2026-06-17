@@ -46,11 +46,24 @@ const pad = (str, width) => {
     return str + " ".repeat(width - str.length);
 };
 
-function buildTable(rows) {
-    const headers = ["NAME", "CPU", "MEM USAGE", "%MEM"];
-    const matrix = [headers, ...rows];
+function parseMemBytes(s) {
+    const m = String(s).match(/^([\d.]+)\s*(B|KiB|MiB|GiB|TiB|kB|MB|GB|TB)/i);
+    if (!m) return 0;
+    const v = parseFloat(m[1]);
+    const map = { b:1, kib:1024, mib:1024**2, gib:1024**3, tib:1024**4, kb:1e3, mb:1e6, gb:1e9, tb:1e12 };
+    return v * (map[m[2].toLowerCase()] || 1);
+}
 
-    // calcular anchos por columna
+function fmtBytes(b) {
+    if (b >= 1024**3) return (b / 1024**3).toFixed(2) + "GiB";
+    if (b >= 1024**2) return (b / 1024**2).toFixed(2) + "MiB";
+    return (b / 1024).toFixed(2) + "KiB";
+}
+
+function buildTable(rows, totalRow) {
+    const headers = ["NAME", "CPU", "MEM USAGE", "%MEM"];
+    const matrix = [headers, ...rows, totalRow];
+
     const widths = headers.map((_, colIdx) =>
         Math.max(...matrix.map(r => String(r[colIdx] ?? "").length))
     );
@@ -62,6 +75,8 @@ function buildTable(rows) {
     out.push(line(headers));
     out.push("-".repeat(sepLen));
     rows.forEach(r => out.push(line(r)));
+    out.push("-".repeat(sepLen));
+    out.push(line(totalRow));
     return out.join("\n");
 }
 
@@ -69,23 +84,13 @@ function clearScreen() {
     process.stdout.write("\x1bc"); // clear pantalla
 }
 
-function renderTable(dataArray) {
-    // dataArray: [{Name, CPUPerc, MemUsage, MemPerc, NetIO, BlockIO, PIDs}, ...]
-    let parsed = Array.isArray(dataArray) ? dataArray : [dataArray];
+function renderTable({ containers, host }) {
+    let parsed = Array.isArray(containers) ? containers : [];
 
-    // Filtro opcional por nombre/ID
     if (filterRegex) {
         parsed = parsed.filter(d => filterRegex.test(d.Name || d.Container || d.ID || ""));
     }
 
-    // Orden
-    // parsed.sort((a, b) => {
-    //     const av = SORT === "cpu" ? pctToNumber(a.CPUPerc) : pctToNumber(a.MemPerc);
-    //     const bv = SORT === "cpu" ? pctToNumber(b.CPUPerc) : pctToNumber(b.MemPerc);
-    //     return bv - av; // desc
-    // });
-
-    // Filas
     const rows = parsed.map(d => [
         d.Name || d.Container || d.ID || "",
         d.CPUPerc || "0%",
@@ -93,32 +98,36 @@ function renderTable(dataArray) {
         d.MemPerc || "0%",
     ]);
 
+    const totalCpu = parsed.reduce((s, d) => s + pctToNumber(d.CPUPerc), 0);
+    const totalMem = parsed.reduce((s, d) => s + parseMemBytes((d.MemUsage || "").split("/")[0].trim()), 0);
+    const totalRow = [`TOTAL (${parsed.length})`, totalCpu.toFixed(1) + "%", fmtBytes(totalMem), "—"];
+
     clearScreen();
     const now = new Date();
     console.log(`Docker Stats (WS): ${WS_URL}  —  Ordenado por ${SORT.toUpperCase()} desc`);
     console.log(`Actualizado: ${now.toISOString().replace('T', ' ').slice(0, 19)}`);
+    if (host) {
+        console.log(`Host  CPU: ${host.cpuPercent}   RAM: ${host.memUsed} / ${host.memTotal} (${host.memPercent})`);
+    }
     console.log();
-    console.log(buildTable(rows));
+    console.log(buildTable(rows, totalRow));
 }
 
 // ---------- Parsing robusto del mensaje ----------
 function parseMessage(msg) {
-    // Soporta:
-    //  - Un array JSON (tu caso): [ {...}, {...} ]
-    //  - Varias líneas con objetos JSON por línea
-    //  - Un solo objeto JSON
     const s = msg.toString();
     try {
         const parsed = JSON.parse(s);
-        return Array.isArray(parsed) ? parsed : [parsed];
+        if (Array.isArray(parsed)) return { containers: parsed, host: null };
+        if (parsed.containers) return { containers: parsed.containers, host: parsed.host || null };
+        return { containers: [parsed], host: null };
     } catch {
-        // intentar línea por línea
         const lines = s.split("\n").map(l => l.trim()).filter(Boolean);
         const arr = [];
         for (const ln of lines) {
             try { arr.push(JSON.parse(ln)); } catch { /* ignore */ }
         }
-        return arr.length ? arr : [];
+        return { containers: arr, host: null };
     }
 }
 
@@ -138,8 +147,8 @@ function connect() {
     });
 
     ws.on("message", (data) => {
-        const arr = parseMessage(data);
-        if (arr.length) renderTable(arr);
+        const parsed = parseMessage(data);
+        if (parsed.containers.length || parsed.host) renderTable(parsed);
     });
 
     ws.on("error", () => {

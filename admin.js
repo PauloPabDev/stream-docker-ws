@@ -204,6 +204,11 @@ function renderDashboard(session, tokens, newToken = null) {
 
     <h2>Contenedores en tiempo real</h2>
     <p id="ws-status" style="font-size:0.8rem;color:#8b949e;margin:0.4rem 0 0.6rem">Conectando...</p>
+    <div id="host-stats" style="display:flex;gap:1.5rem;background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:0.6rem 1rem;margin-bottom:0.75rem;font-size:0.82rem;color:#8b949e">
+      <span>Host CPU: <strong id="host-cpu" style="color:#79c0ff">—</strong></span>
+      <span>RAM usada: <strong id="host-mem-used" style="color:#79c0ff">—</strong> / <strong id="host-mem-total" style="color:#c9d1d9">—</strong></span>
+      <span>RAM %: <strong id="host-mem-pct" style="color:#79c0ff">—</strong></span>
+    </div>
     <div style="overflow-x:auto">
       <table id="stats-table">
         <thead>
@@ -236,6 +241,20 @@ function renderDashboard(session, tokens, newToken = null) {
         const tbody = document.getElementById('stats-body');
         let ws, retryMs = 1000;
 
+        function parseMemBytes(s) {
+          const m = String(s).match(/^([\d.]+)\s*(B|KiB|MiB|GiB|TiB|kB|MB|GB|TB)/i);
+          if (!m) return 0;
+          const v = parseFloat(m[1]);
+          const map = { b:1, kib:1024, mib:1024**2, gib:1024**3, tib:1024**4, kb:1e3, mb:1e6, gb:1e9, tb:1e12 };
+          return v * (map[m[2].toLowerCase()] || 1);
+        }
+
+        function fmtBytes(b) {
+          if (b >= 1024**3) return (b / 1024**3).toFixed(2) + 'GiB';
+          if (b >= 1024**2) return (b / 1024**2).toFixed(2) + 'MiB';
+          return (b / 1024).toFixed(2) + 'KiB';
+        }
+
         function connect() {
           ws = new WebSocket('ws://' + location.host);
           ws.onopen = () => {
@@ -250,13 +269,23 @@ function renderDashboard(session, tokens, newToken = null) {
             retryMs = Math.min(retryMs * 2, 10000);
           };
           ws.onmessage = (e) => {
-            let data;
-            try { data = JSON.parse(e.data); } catch { return; }
-            if (!Array.isArray(data) || !data.length) {
+            let payload;
+            try { payload = JSON.parse(e.data); } catch { return; }
+            const containers = Array.isArray(payload) ? payload : (payload.containers || []);
+            const host = payload.host || null;
+            if (host) {
+              document.getElementById('host-cpu').textContent = host.cpuPercent;
+              document.getElementById('host-mem-used').textContent = host.memUsed;
+              document.getElementById('host-mem-total').textContent = host.memTotal;
+              document.getElementById('host-mem-pct').textContent = host.memPercent;
+            }
+            if (!containers.length) {
               tbody.innerHTML = '<tr><td colspan="7" style="color:#8b949e;text-align:center">Sin contenedores activos</td></tr>';
               return;
             }
-            tbody.innerHTML = data.map(c => \`<tr>
+            const totalCpu = containers.reduce((s, c) => s + parseFloat(c.CPUPerc || 0), 0);
+            const totalMem = containers.reduce((s, c) => s + parseMemBytes((c.MemUsage || '').split('/')[0].trim()), 0);
+            const rows = containers.map(c => \`<tr>
               <td>\${c.Name}</td>
               <td>\${c.CPUPerc}</td>
               <td>\${c.MemPerc}</td>
@@ -265,6 +294,14 @@ function renderDashboard(session, tokens, newToken = null) {
               <td>\${c.BlockIO}</td>
               <td>\${c.PIDs}</td>
             </tr>\`).join('');
+            const totalRow = \`<tr style="border-top:2px solid #58a6ff;font-weight:600;color:#f0f6fc">
+              <td>TOTAL (\${containers.length})</td>
+              <td>\${totalCpu.toFixed(1)}%</td>
+              <td>—</td>
+              <td>\${fmtBytes(totalMem)}</td>
+              <td colspan="3"></td>
+            </tr>\`;
+            tbody.innerHTML = rows + totalRow;
           };
         }
 

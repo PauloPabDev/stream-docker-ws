@@ -1,7 +1,8 @@
 import { createServer } from "node:http";
 import { spawn } from "child_process";
+import { readFileSync } from "node:fs";
 import { WebSocketServer } from "ws";
-import { networkInterfaces } from "os";
+import { networkInterfaces, totalmem, freemem } from "os";
 import { initDb, validateToken } from "./db.js";
 import { adminHandler, bootstrap, isAdminSession } from "./admin.js";
 
@@ -42,6 +43,45 @@ httpServer.listen(PORT, () => {
   console.log(`Admin panel: http://localhost:${PORT}/`);
 });
 
+let prevCpu = null;
+
+function getCpuPercent() {
+  try {
+    const stat = readFileSync("/proc/stat", "utf8");
+    const parts = stat.split("\n")[0].split(/\s+/).slice(1).map(Number);
+    const idle = parts[3] + (parts[4] || 0);
+    const total = parts.reduce((a, b) => a + b, 0);
+    let percent = null;
+    if (prevCpu) {
+      const deltaIdle = idle - prevCpu.idle;
+      const deltaTotal = total - prevCpu.total;
+      percent = deltaTotal > 0 ? ((1 - deltaIdle / deltaTotal) * 100).toFixed(1) + "%" : "0%";
+    }
+    prevCpu = { idle, total };
+    return percent ?? "-%";
+  } catch {
+    return "-%";
+  }
+}
+
+function fmtBytes(bytes) {
+  if (bytes >= 1024 ** 3) return (bytes / 1024 ** 3).toFixed(2) + "GiB";
+  if (bytes >= 1024 ** 2) return (bytes / 1024 ** 2).toFixed(2) + "MiB";
+  return (bytes / 1024).toFixed(2) + "KiB";
+}
+
+function getHostStats() {
+  const total = totalmem();
+  const free = freemem();
+  const used = total - free;
+  return {
+    cpuPercent: getCpuPercent(),
+    memTotal: fmtBytes(total),
+    memUsed: fmtBytes(used),
+    memPercent: ((used / total) * 100).toFixed(1) + "%",
+  };
+}
+
 wss.on("connection", (ws) => {
   console.log("Cliente conectado");
 
@@ -59,11 +99,11 @@ wss.on("connection", (ws) => {
     });
 
     dockerStats.on("close", () => {
-      const lines = output
+      const containers = output
         .split("\n")
         .filter((l) => l.trim().length > 0)
         .map((l) => JSON.parse(l));
-      ws.send(JSON.stringify(lines));
+      ws.send(JSON.stringify({ containers, host: getHostStats() }));
     });
   };
 

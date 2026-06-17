@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Docker Stats Viewer</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0d1117;
+      --surface: #161b22;
+      --border: #30363d;
+      --text: #c9d1d9;
+      --text-muted: #8b949e;
+      --blue: #58a6ff;
+      --green: #3fb950;
+      --red: #f85149;
+      --yellow: #d29922;
+      --accent: #238636;
+    }
+
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    /* ---- PANTALLA DE LOGIN ---- */
+    #login-screen {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 1.5rem;
+    }
+
+    .login-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 2rem;
+      width: 100%;
+      max-width: 420px;
+    }
+
+    .login-card h1 {
+      color: var(--blue);
+      font-size: 1.15rem;
+      margin-bottom: 0.25rem;
+    }
+
+    .login-card p {
+      color: var(--text-muted);
+      font-size: 0.85rem;
+      margin-bottom: 1.5rem;
+    }
+
+    label {
+      display: block;
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      margin-bottom: 0.3rem;
+      margin-top: 1rem;
+    }
+
+    input[type="text"],
+    input[type="password"],
+    input[type="url"] {
+      width: 100%;
+      padding: 0.6rem 0.8rem;
+      background: var(--bg);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-size: 0.9rem;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+
+    input:focus { border-color: var(--blue); }
+
+    .token-wrap {
+      position: relative;
+    }
+
+    .token-wrap input { padding-right: 3rem; }
+
+    .token-wrap button.toggle {
+      position: absolute;
+      right: 0.5rem;
+      top: 50%;
+      transform: translateY(-50%);
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 0.8rem;
+      padding: 0.2rem 0.4rem;
+    }
+
+    .token-wrap button.toggle:hover { color: var(--text); }
+
+    button.primary {
+      width: 100%;
+      margin-top: 1.25rem;
+      padding: 0.7rem;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+
+    button.primary:hover { background: #2ea043; }
+    button.primary:disabled { background: #21262d; color: var(--text-muted); cursor: not-allowed; }
+
+    .error-msg {
+      margin-top: 0.75rem;
+      padding: 0.6rem 0.8rem;
+      background: #2d1010;
+      border: 1px solid var(--red);
+      border-radius: 6px;
+      color: var(--red);
+      font-size: 0.82rem;
+      display: none;
+    }
+
+    /* ---- PANTALLA DE STATS ---- */
+    #stats-screen { display: none; }
+
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 0.75rem 1.5rem;
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+
+    header h1 {
+      font-size: 1rem;
+      color: var(--blue);
+      flex: 1;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--red);
+      flex-shrink: 0;
+    }
+
+    .status-dot.on { background: var(--green); }
+
+    #status-text {
+      font-size: 0.82rem;
+      color: var(--text-muted);
+    }
+
+    #last-update {
+      font-size: 0.78rem;
+      color: var(--text-muted);
+    }
+
+    button.disconnect {
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      border-radius: 5px;
+      padding: 0.3rem 0.75rem;
+      font-size: 0.8rem;
+      cursor: pointer;
+      transition: border-color 0.15s, color 0.15s;
+    }
+
+    button.disconnect:hover { border-color: var(--red); color: var(--red); }
+
+    .table-wrap {
+      padding: 1.25rem 1.5rem;
+      overflow-x: auto;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.87rem;
+    }
+
+    thead th {
+      background: var(--surface);
+      color: var(--text-muted);
+      font-weight: 600;
+      padding: 0.55rem 0.75rem;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+      white-space: nowrap;
+      position: sticky;
+      top: 0;
+    }
+
+    tbody td {
+      padding: 0.5rem 0.75rem;
+      border-bottom: 1px solid #1c2128;
+      font-family: monospace;
+      white-space: nowrap;
+    }
+
+    tbody tr:last-child td { border-bottom: none; }
+    tbody tr:hover { background: #1f6feb12; }
+
+    .name-cell { font-family: system-ui, sans-serif; font-weight: 500; color: var(--text); }
+
+    .cpu-bar, .mem-bar {
+      display: inline-block;
+      height: 5px;
+      border-radius: 3px;
+      vertical-align: middle;
+      margin-left: 0.4rem;
+      background: var(--green);
+    }
+
+    .cpu-bar.warn { background: var(--yellow); }
+    .cpu-bar.high, .mem-bar.high { background: var(--red); }
+
+    #empty-row td {
+      text-align: center;
+      color: var(--text-muted);
+      padding: 2rem;
+      font-family: system-ui, sans-serif;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- PANTALLA DE CONEXIÓN -->
+  <div id="login-screen">
+    <div class="login-card">
+      <h1>Docker Stats Viewer</h1>
+      <p>Conéctate al servidor con tu API token.</p>
+
+      <label for="server-url">URL del servidor WebSocket</label>
+      <input type="url" id="server-url" placeholder="ws://localhost:8081" autocomplete="off" />
+
+      <label for="token-input">API Token</label>
+      <div class="token-wrap">
+        <input type="password" id="token-input" placeholder="Pega tu token aquí" autocomplete="off" />
+        <button class="toggle" onclick="toggleToken()" title="Mostrar / ocultar">👁</button>
+      </div>
+
+      <button class="primary" id="connect-btn" onclick="connect()">Conectar</button>
+      <div class="error-msg" id="error-msg"></div>
+    </div>
+  </div>
+
+  <!-- PANTALLA DE STATS -->
+  <div id="stats-screen">
+    <header>
+      <div class="status-dot" id="dot"></div>
+      <h1>Docker Stats</h1>
+      <span id="status-text">Conectando...</span>
+      <span id="last-update"></span>
+      <button class="disconnect" onclick="disconnect()">Desconectar</button>
+    </header>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Contenedor</th>
+            <th>CPU %</th>
+            <th>Mem %</th>
+            <th>Memoria</th>
+            <th>Red I/O</th>
+            <th>Disco I/O</th>
+            <th>PIDs</th>
+          </tr>
+        </thead>
+        <tbody id="stats-body">
+          <tr id="empty-row"><td colspan="7">Esperando datos...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <script>
+    const LS_TOKEN = 'dstats-token';
+    const LS_URL   = 'dstats-url';
+
+    const loginScreen = document.getElementById('login-screen');
+    const statsScreen = document.getElementById('stats-screen');
+    const tokenInput  = document.getElementById('token-input');
+    const urlInput    = document.getElementById('server-url');
+    const connectBtn  = document.getElementById('connect-btn');
+    const errorMsg    = document.getElementById('error-msg');
+    const dot         = document.getElementById('dot');
+    const statusText  = document.getElementById('status-text');
+    const lastUpdate  = document.getElementById('last-update');
+    const tbody       = document.getElementById('stats-body');
+
+    let ws = null;
+    let retryMs = 1000;
+    let retryTimer = null;
+    let connecting = false;
+
+    // Restaurar valores guardados
+    tokenInput.value = localStorage.getItem(LS_TOKEN) || '';
+    urlInput.value   = localStorage.getItem(LS_URL)   || ('ws://' + location.hostname + ':8081');
+
+    // Enter en cualquier campo conecta
+    [tokenInput, urlInput].forEach(el => el.addEventListener('keydown', e => {
+      if (e.key === 'Enter') connect();
+    }));
+
+    function toggleToken() {
+      tokenInput.type = tokenInput.type === 'password' ? 'text' : 'password';
+    }
+
+    function showError(msg) {
+      errorMsg.textContent = msg;
+      errorMsg.style.display = 'block';
+    }
+
+    function hideError() {
+      errorMsg.style.display = 'none';
+    }
+
+    function pct(str) {
+      return parseFloat(String(str).replace('%', '')) || 0;
+    }
+
+    function bar(value, cls) {
+      const w = Math.min(value, 100).toFixed(1);
+      let level = '';
+      if (value > 80) level = 'high';
+      else if (value > 50) level = 'warn';
+      return `<span class="${cls} ${level}" style="width:${w}px" title="${w}%"></span>`;
+    }
+
+    function renderRows(data) {
+      if (!data.length) {
+        tbody.innerHTML = '<tr id="empty-row"><td colspan="7">Sin contenedores activos</td></tr>';
+        return;
+      }
+      tbody.innerHTML = data.map(c => {
+        const cpu = pct(c.CPUPerc);
+        const mem = pct(c.MemPerc);
+        return `<tr>
+          <td class="name-cell">${esc(c.Name)}</td>
+          <td>${esc(c.CPUPerc)}${bar(cpu, 'cpu-bar')}</td>
+          <td>${esc(c.MemPerc)}${bar(mem, 'mem-bar')}</td>
+          <td>${esc(c.MemUsage)}</td>
+          <td>${esc(c.NetIO)}</td>
+          <td>${esc(c.BlockIO)}</td>
+          <td>${esc(c.PIDs)}</td>
+        </tr>`;
+      }).join('');
+    }
+
+    function esc(s) {
+      return String(s ?? '')
+        .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
+    function setConnected(yes) {
+      dot.className = 'status-dot' + (yes ? ' on' : '');
+      statusText.textContent = yes ? 'Conectado' : 'Desconectado';
+    }
+
+    function connect() {
+      const token = tokenInput.value.trim();
+      const rawUrl = urlInput.value.trim() || ('ws://' + location.hostname + ':8081');
+
+      if (!token) { showError('Ingresa un API token.'); tokenInput.focus(); return; }
+
+      hideError();
+      connectBtn.disabled = true;
+      connectBtn.textContent = 'Conectando...';
+
+      localStorage.setItem(LS_TOKEN, token);
+      localStorage.setItem(LS_URL, rawUrl);
+
+      const url = rawUrl.replace(/\/?$/, '') + '?token=' + encodeURIComponent(token);
+
+      if (ws) { ws.onclose = null; ws.close(); }
+      clearTimeout(retryTimer);
+
+      ws = new WebSocket(url);
+
+      ws.onopen = () => {
+        retryMs = 1000;
+        loginScreen.style.display = 'none';
+        statsScreen.style.display = 'block';
+        setConnected(true);
+        connectBtn.disabled = false;
+        connectBtn.textContent = 'Conectar';
+      };
+
+      ws.onclose = (e) => {
+        setConnected(false);
+        lastUpdate.textContent = '';
+
+        // Token inválido (1006 = error de handshake, 1002 = protocol error)
+        if (e.code === 1006 && !connecting) {
+          statsScreen.style.display = 'none';
+          loginScreen.style.display = 'flex';
+          connectBtn.disabled = false;
+          connectBtn.textContent = 'Conectar';
+          showError('Token inválido o servidor no disponible.');
+          localStorage.removeItem(LS_TOKEN);
+          return;
+        }
+
+        // Reconexión automática si ya estaba en la pantalla de stats
+        statusText.textContent = `Reconectando en ${retryMs / 1000}s...`;
+        retryTimer = setTimeout(() => {
+          connecting = true;
+          connect();
+          connecting = false;
+        }, retryMs);
+        retryMs = Math.min(retryMs * 2, 15000);
+      };
+
+      ws.onerror = () => {};
+
+      ws.onmessage = (e) => {
+        let data;
+        try { data = JSON.parse(e.data); } catch { return; }
+        if (Array.isArray(data)) {
+          renderRows(data);
+          const now = new Date();
+          lastUpdate.textContent = 'actualizado ' + now.toLocaleTimeString();
+        }
+      };
+    }
+
+    function disconnect() {
+      clearTimeout(retryTimer);
+      if (ws) { ws.onclose = null; ws.close(); ws = null; }
+      statsScreen.style.display = 'none';
+      loginScreen.style.display = 'flex';
+      setConnected(false);
+      connectBtn.disabled = false;
+      connectBtn.textContent = 'Conectar';
+      hideError();
+    }
+
+    // Auto-conectar si hay token guardado
+    if (tokenInput.value) connect();
+  </script>
+</body>
+</html>
