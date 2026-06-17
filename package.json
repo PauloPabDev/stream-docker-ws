@@ -5,9 +5,9 @@
   "description": "un server de ws, para servir los datos de docker stats",
   "main": "server.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "dev": "nodemon server.js",
-    "start": "node server.js"
+    "start": "node server.js",
+    "dev": "node --env-file=.env --watch server.js",
+    "test": "DB_PATH=:memory: node --test test/db.test.js test/admin.test.js"
   },
   "keywords": [
     "ws",
@@ -17,6 +17,7 @@
   "author": "PedroPab",
   "license": "MIT",
   "dependencies": {
+    "better-sqlite3": "^11.0.0",
     "ws": "^8.18.3"
   }
 }

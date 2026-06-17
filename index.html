@@ -48,72 +48,162 @@
 
     .connected { color: #3fb950; }
     .disconnected { color: #f85149; }
+
+    #auth-section {
+      max-width: 480px;
+      margin: 2rem auto;
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      padding: 1.5rem;
+    }
+
+    #auth-section p {
+      margin-bottom: 0.75rem;
+      color: #8b949e;
+      font-size: 0.9rem;
+    }
+
+    #auth-section input {
+      width: 100%;
+      padding: 0.6rem 0.8rem;
+      background: #0d1117;
+      color: #c9d1d9;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      font-size: 0.9rem;
+      box-sizing: border-box;
+    }
+
+    #auth-section input:focus {
+      outline: none;
+      border-color: #58a6ff;
+    }
+
+    #auth-section button {
+      margin-top: 0.75rem;
+      width: 100%;
+      padding: 0.6rem;
+      background: #238636;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    #auth-section button:hover { background: #2ea043; }
+
+    #auth-error {
+      color: #f85149;
+      font-size: 0.85rem;
+      margin-top: 0.5rem;
+      display: none;
+    }
+
+    #stats-section { display: none; }
   </style>
 </head>
 <body>
-  <h1>📊 Monitor de contenedores Docker</h1>
-  <div id="status" class="disconnected">⏳ Conectando...</div>
+  <h1>Monitor de contenedores Docker</h1>
+  <div id="status" class="disconnected">Desconectado</div>
 
-  <table id="statsTable">
-    <thead>
-      <tr>
-        <th>Nombre</th>
-        <th>CPU</th>
-        <th>Memoria</th>
-        <th>Uso Memoria</th>
-        <th>Red (NetIO)</th>
-        <th>Bloques (BlockIO)</th>
-        <th>PIDs</th>
-      </tr>
-    </thead>
-    <tbody></tbody>
-  </table>
+  <div id="auth-section">
+    <p>Ingresa tu token de API para conectarte:</p>
+    <input type="password" id="token-input" placeholder="Pega tu token aquí" autocomplete="off" />
+    <button onclick="connect()">Conectar</button>
+    <p id="auth-error">Token inválido o sin permisos. Verifica tu token.</p>
+  </div>
+
+  <div id="stats-section">
+    <table id="statsTable">
+      <thead>
+        <tr>
+          <th>Nombre</th>
+          <th>CPU</th>
+          <th>Memoria</th>
+          <th>Uso Memoria</th>
+          <th>Red (NetIO)</th>
+          <th>Bloques (BlockIO)</th>
+          <th>PIDs</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
 
   <script>
     const wsHost = window.location.hostname || "localhost";
-    const ws = new WebSocket(`ws://${wsHost}:8081`);
     const statusEl = document.getElementById("status");
     const tbody = document.querySelector("#statsTable tbody");
+    const authSection = document.getElementById("auth-section");
+    const statsSection = document.getElementById("stats-section");
+    const authError = document.getElementById("auth-error");
+    let ws = null;
 
-    ws.onopen = () => {
-      statusEl.textContent = "🟢 Conectado al servidor WebSocket";
-      statusEl.className = "connected";
-    };
+    function connect() {
+      const token = document.getElementById("token-input").value.trim();
+      if (!token) return;
 
-    ws.onclose = () => {
-      statusEl.textContent = "🔴 Desconectado del servidor";
-      statusEl.className = "disconnected";
-    };
+      authError.style.display = "none";
+      sessionStorage.setItem("ws-token", token);
 
-    ws.onmessage = (event) => {
-      let data;
-      try {
-        data = JSON.parse(event.data);
-        console.log("Datos recibidos:", data);
-      } catch (err) {
-        console.error("Error al parsear JSON:", err);
-        return;
+      ws = new WebSocket(`ws://${wsHost}:8081?token=${encodeURIComponent(token)}`);
+
+      ws.onopen = () => {
+        statusEl.textContent = "Conectado al servidor WebSocket";
+        statusEl.className = "connected";
+        authSection.style.display = "none";
+        statsSection.style.display = "block";
+      };
+
+      ws.onclose = (event) => {
+        statusEl.textContent = "Desconectado del servidor";
+        statusEl.className = "disconnected";
+        statsSection.style.display = "none";
+        authSection.style.display = "block";
+        // 1006 = cierre anormal (incluye rechazo en el upgrade por token inválido)
+        if (event.code === 1006 || event.code === 1002) {
+          authError.style.display = "block";
+          sessionStorage.removeItem("ws-token");
+        }
+      };
+
+      ws.onmessage = (event) => {
+        let data;
+        try {
+          data = JSON.parse(event.data);
+        } catch (err) {
+          console.error("Error al parsear JSON:", err);
+          return;
+        }
+
+        tbody.innerHTML = "";
+        data.forEach((container) => {
+          const tr = document.createElement("tr");
+          tr.innerHTML = `
+            <td>${container.Name}</td>
+            <td>${container.CPUPerc}</td>
+            <td>${container.MemPerc}</td>
+            <td>${container.MemUsage}</td>
+            <td>${container.NetIO}</td>
+            <td>${container.BlockIO}</td>
+            <td>${container.PIDs}</td>
+          `;
+          tbody.appendChild(tr);
+        });
+      };
+    }
+
+    // Auto-conectar si hay token guardado
+    window.addEventListener("load", () => {
+      const saved = sessionStorage.getItem("ws-token");
+      if (saved) {
+        document.getElementById("token-input").value = saved;
+        connect();
       }
-
-      // Limpia la tabla
-      tbody.innerHTML = "";
-
-      data.forEach((container) => {
-        const tr = document.createElement("tr");
-
-        tr.innerHTML = `
-          <td>${container.Name}</td>
-          <td>${container.CPUPerc}</td>
-          <td>${container.MemPerc}</td>
-          <td>${container.MemUsage}</td>
-          <td>${container.NetIO}</td>
-          <td>${container.BlockIO}</td>
-          <td>${container.PIDs}</td>
-        `;
-
-        tbody.appendChild(tr);
-      });
-    };
+    });
   </script>
 </body>
 </html>

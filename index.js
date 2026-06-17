@@ -1,11 +1,10 @@
 // Cliente WebSocket para mostrar stats en tabla en consola
 // Uso:
-//   node client.js [ws://host:puerto] [--sort cpu|mem] [--filter regex] [--insecure]
+//   node index.js [ws://host:puerto] --token <api-token> [--sort cpu|mem] [--filter regex] [--insecure]
 // Ejemplos:
-//   node client.js
-//   node client.js ws://localhost:8081 --sort mem
-//   node client.js ws://192.168.1.10:8081 --filter api- --sort cpu
-//   node client.js wss://tu-dominio:8081 --cacert /ruta/ca.pem (usa proxy/terminación TLS delante del WS)
+//   node index.js --token abc123
+//   node index.js ws://localhost:8081 --token abc123 --sort mem
+//   node index.js ws://192.168.1.10:8081 --token abc123 --filter api- --sort cpu
 
 import WebSocket from "ws";
 
@@ -15,6 +14,7 @@ let WS_URL = "ws://149.50.140.57:8081";
 let SORT = "cpu";        // cpu | mem
 let FILTER = null;       // regex string
 let INSECURE = false;    // para wss auto-firmado (no recomendado)
+let TOKEN = null;        // token de API requerido
 
 for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -22,8 +22,15 @@ for (let i = 0; i < argv.length; i++) {
     else if (a === "--sort") { SORT = (argv[i + 1] || "cpu").toLowerCase(); i++; }
     else if (a === "--filter") { FILTER = argv[i + 1] || null; i++; }
     else if (a === "--insecure") { INSECURE = true; }
+    else if (a === "--token") { TOKEN = argv[i + 1] || null; i++; }
 }
 if (!["cpu", "mem"].includes(SORT)) SORT = "cpu";
+
+if (!TOKEN) {
+    console.error("Error: se requiere --token <api-token>");
+    console.error("Crea un token en el panel admin: http://localhost:8082");
+    process.exit(1);
+}
 
 const filterRegex = FILTER ? new RegExp(FILTER, "i") : null;
 
@@ -120,7 +127,8 @@ let backoff = 1000; // ms
 const maxBackoff = 10000;
 
 function connect() {
-    const ws = new WebSocket(WS_URL, {
+    const url = `${WS_URL}?token=${encodeURIComponent(TOKEN)}`;
+    const ws = new WebSocket(url, {
         rejectUnauthorized: !INSECURE, // para wss
     });
 

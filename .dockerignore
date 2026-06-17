@@ -2,3 +2,5 @@ node_modules
 npm-debug.log
 pnpm-lock.yaml
 .git
+data/
+test/

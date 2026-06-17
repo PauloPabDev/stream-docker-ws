@@ -1,28 +1,48 @@
+import { createServer } from "node:http";
 import { spawn } from "child_process";
 import { WebSocketServer } from "ws";
 import { networkInterfaces } from "os";
+import { initDb, validateToken } from "./db.js";
+import { adminHandler, bootstrap } from "./admin.js";
 
-const wss = new WebSocketServer({ port: 8081 });
-console.log("✅ WebSocket en ws://localhost:8081");
+initDb();
+bootstrap();
 
-// Obtener la IP local
-const getLocalIP = () => {
-  const interfaces = networkInterfaces();
-  for (const name of Object.keys(interfaces)) {
-    for (const iface of interfaces[name]) {
-      if (iface.family === 'IPv4' && !iface.internal) {
-        return iface.address;
+const httpServer = createServer(adminHandler);
+const wss = new WebSocketServer({ noServer: true });
+
+httpServer.on("upgrade", (req, socket, head) => {
+  const url = new URL(req.url, "http://localhost");
+  const token = url.searchParams.get("token");
+  if (!token || !validateToken(token)) {
+    socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
+    socket.destroy();
+    return;
+  }
+  wss.handleUpgrade(req, socket, head, (ws) => {
+    wss.emit("connection", ws, req);
+  });
+});
+
+const PORT = process.env.PORT || 8081;
+httpServer.listen(PORT, () => {
+  const getLocalIP = () => {
+    const interfaces = networkInterfaces();
+    for (const name of Object.keys(interfaces)) {
+      for (const iface of interfaces[name]) {
+        if (iface.family === "IPv4" && !iface.internal) return iface.address;
       }
     }
-  }
-  return 'localhost';
-};
-
-const localIP = getLocalIP();
-console.log(`🌐 WebSocket también disponible en ws://${localIP}:8081`);
+    return "localhost";
+  };
+  const ip = getLocalIP();
+  console.log(`WebSocket: ws://localhost:${PORT}?token=<token>`);
+  console.log(`WebSocket: ws://${ip}:${PORT}?token=<token>`);
+  console.log(`Admin panel: http://localhost:${PORT}/`);
+});
 
 wss.on("connection", (ws) => {
-  console.log("Cliente conectado!");
+  console.log("Cliente conectado");
 
   const sendStats = () => {
     const dockerStats = spawn("docker", [
@@ -41,12 +61,11 @@ wss.on("connection", (ws) => {
       const lines = output
         .split("\n")
         .filter((l) => l.trim().length > 0)
-        .map((l) => JSON.parse(l)); // ahora sí es JSON válido
+        .map((l) => JSON.parse(l));
       ws.send(JSON.stringify(lines));
     });
   };
 
-  // enviar cada 1s
   const interval = setInterval(sendStats, 1000);
 
   ws.on("close", () => {
