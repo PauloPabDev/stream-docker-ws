@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Docker Pulse — Initial Setup</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="/public/admin.css"/>
+</head>
+<body class="auth">
+  <div class="auth-card">
+    <div class="brand">
+      <div class="brand-icon">
+        <svg viewBox="0 0 24 24" fill="none">
+          <rect x="2"  y="11" width="4" height="3.5" rx=".6" fill="#93c5fd"/>
+          <rect x="7"  y="11" width="4" height="3.5" rx=".6" fill="#93c5fd"/>
+          <rect x="12" y="11" width="4" height="3.5" rx=".6" fill="#93c5fd"/>
+          <rect x="7"  y="7"  width="4" height="3.5" rx=".6" fill="#60a5fa"/>
+          <rect x="12" y="7"  width="4" height="3.5" rx=".6" fill="#60a5fa"/>
+          <path d="M1 15.5 Q6 19 12 17.5 Q18 16 22 14.5 Q22 19 12 21 Q4 21 1 17 Z" fill="#3b82f6" opacity=".85"/>
+          <path d="M20 12.5 Q22.5 9 22 11.5" stroke="#60a5fa" stroke-width="1.2" stroke-linecap="round"/>
+        </svg>
+      </div>
+      <div class="brand-text">
+        <h1>Docker Pulse</h1>
+        <p>Create your admin account</p>
+      </div>
+    </div>
+
+    <form method="post" action="/setup" autocomplete="off">
+      <div class="field">
+        <label for="username">Username</label>
+        <input type="text" id="username" name="username" placeholder="admin" required autofocus autocomplete="username"/>
+      </div>
+      <div class="field">
+        <label for="password">Password</label>
+        <input type="password" id="password" name="password" placeholder="Choose a strong password" required autocomplete="new-password"/>
+      </div>
+      <button type="submit" class="btn-primary">Create account</button>
+      {{error}}
+    </form>
+  </div>
+</body>
+</html>

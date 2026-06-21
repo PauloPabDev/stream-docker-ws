@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Docker Pulse — Admin</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="/public/admin.css"/>
+</head>
+<body class="dash">
+
+  <header class="dash-header">
+    <div class="dash-brand">
+      <div class="bi">
+        <svg viewBox="0 0 24 24" fill="none">
+          <rect x="2"  y="11" width="4" height="3.5" rx=".6" fill="#93c5fd"/>
+          <rect x="7"  y="11" width="4" height="3.5" rx=".6" fill="#93c5fd"/>
+          <rect x="12" y="11" width="4" height="3.5" rx=".6" fill="#93c5fd"/>
+          <rect x="7"  y="7"  width="4" height="3.5" rx=".6" fill="#60a5fa"/>
+          <rect x="12" y="7"  width="4" height="3.5" rx=".6" fill="#60a5fa"/>
+          <path d="M1 15.5 Q6 19 12 17.5 Q18 16 22 14.5 Q22 19 12 21 Q4 21 1 17 Z" fill="#3b82f6" opacity=".85"/>
+          <path d="M20 12.5 Q22.5 9 22 11.5" stroke="#60a5fa" stroke-width="1.2" stroke-linecap="round"/>
+        </svg>
+      </div>
+      <span>Docker Pulse</span>
+    </div>
+    <span class="admin-badge">Admin</span>
+    <div class="vr"></div>
+    <div class="live-pill" id="live-pill">
+      <div class="live-dot"></div>
+      <span id="live-txt">Connecting…</span>
+    </div>
+    <div class="hdr-spacer"></div>
+    <span class="hdr-user">Signed in as <strong>{{username}}</strong></span>
+    <div class="vr"></div>
+    <form method="post" action="/logout" style="margin:0">
+      <button type="submit" class="btn-logout">Sign out</button>
+    </form>
+  </header>
+
+  <main class="main">
+
+    <!-- ── KPI row ── -->
+    <div class="kpi-grid">
+      <div class="kpi-card kpi-blue">
+        <div class="kpi-label">Host CPU</div>
+        <div class="kpi-value" id="h-cpu">—</div>
+        <div class="kpi-sub" id="h-cpu-sub">waiting for data</div>
+      </div>
+      <div class="kpi-card kpi-green">
+        <div class="kpi-label">Host Memory</div>
+        <div class="kpi-value" id="h-mem-pct">—</div>
+        <div class="kpi-sub" id="h-mem-sub">waiting for data</div>
+      </div>
+      <div class="kpi-card kpi-yellow">
+        <div class="kpi-label">Containers</div>
+        <div class="kpi-value" id="h-count">—</div>
+        <div class="kpi-sub" id="h-count-sub">running</div>
+      </div>
+      <div class="kpi-card kpi-purple">
+        <div class="kpi-label">Total CPU load</div>
+        <div class="kpi-value" id="h-total-cpu">—</div>
+        <div class="kpi-sub">across all containers</div>
+      </div>
+    </div>
+
+    <!-- ── Live container stats ── -->
+    <div class="section">
+      <div class="section-header">
+        <div class="section-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="2" y="3" width="20" height="14" rx="2"/>
+            <path d="M8 21h8M12 17v4"/>
+          </svg>
+        </div>
+        <div class="section-title">Live Containers</div>
+        <div class="section-count" id="cnt-badge">0</div>
+      </div>
+
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Container</th>
+            <th>CPU</th>
+            <th>Mem %</th>
+            <th>Mem usage</th>
+            <th>Net I/O</th>
+            <th>Block I/O</th>
+            <th>PIDs</th>
+          </tr>
+        </thead>
+        <tbody id="stats-tbody">
+          <tr><td class="empty-cell" colspan="7">Connecting to WebSocket…</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- ── API Tokens ── -->
+    <div class="section">
+      <div class="section-header">
+        <div class="section-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/>
+          </svg>
+        </div>
+        <div class="section-title">API Tokens</div>
+      </div>
+
+      {{banner}}
+
+      {{tokens_section}}
+
+      <div class="create-form" style="margin-top:.85rem">
+        <form method="post" action="/api/tokens" style="display:contents">
+          <input type="text" name="label" placeholder="Token name — e.g. home-laptop" required maxlength="100" autocomplete="off"/>
+          <button type="submit" class="btn-create">+ Create token</button>
+        </form>
+      </div>
+    </div>
+
+  </main>
+
+  <script>
+  (function () {
+    const pill      = document.getElementById('live-pill');
+    const pillTxt   = document.getElementById('live-txt');
+    const tbody     = document.getElementById('stats-tbody');
+    const cntBadge  = document.getElementById('cnt-badge');
+    const hCpu      = document.getElementById('h-cpu');
+    const hCpuSub   = document.getElementById('h-cpu-sub');
+    const hMemPct   = document.getElementById('h-mem-pct');
+    const hMemSub   = document.getElementById('h-mem-sub');
+    const hCount    = document.getElementById('h-count');
+    const hTotalCpu = document.getElementById('h-total-cpu');
+    const rowMap    = new Map();
+    let ws, retryMs = 1000, lastPayload = null;
+
+    function setLive(yes) {
+      pill.className = 'live-pill' + (yes ? ' on' : '');
+      pillTxt.textContent = yes ? 'Live' : 'Reconnecting…';
+    }
+
+    function tx(el, v) { if (el && el.textContent !== v) el.textContent = v; }
+
+    function lvl(pct) {
+      if (pct >= 85) return 'fill-crit';
+      if (pct >= 60) return 'fill-warn';
+      return 'fill-ok';
+    }
+
+    function applyPayload(payload) {
+      const containers = Array.isArray(payload) ? payload : (payload.containers || []);
+      const host = (!Array.isArray(payload) && payload.host) || null;
+
+      if (host) {
+        tx(hCpu, host.cpuPercent);
+        tx(hCpuSub, 'host processor');
+        tx(hMemPct, host.memPercent);
+        tx(hMemSub, host.memUsed + ' / ' + host.memTotal);
+      }
+
+      const n = containers.length;
+      tx(hCount, String(n));
+      tx(cntBadge, String(n));
+
+      let totalCpu = 0;
+      for (const c of containers) totalCpu += parseFloat(c.CPUPerc) || 0;
+      tx(hTotalCpu, totalCpu.toFixed(1) + '%');
+
+      if (!n) {
+        if (!tbody.querySelector('.empty-cell')) {
+          tbody.innerHTML = '<tr><td class="empty-cell" colspan="7">No active containers</td></tr>';
+        }
+        rowMap.clear(); return;
+      }
+
+      const ec = tbody.querySelector('.empty-cell');
+      if (ec) ec.parentElement.remove();
+
+      const seen = new Set(containers.map(c => c.Name));
+      for (const [nm, tr] of rowMap) { if (!seen.has(nm)) { tr.remove(); rowMap.delete(nm); } }
+
+      for (const c of containers) {
+        let tr = rowMap.get(c.Name);
+        if (!tr) {
+          tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td class="nm"></td>
+            <td><div class="mini-bar-wrap"><span class="mini-bar-val"></span><div class="mini-bar-track"><div class="mini-bar-fill"></div></div></div></td>
+            <td><div class="mini-bar-wrap"><span class="mini-bar-val"></span><div class="mini-bar-track"><div class="mini-bar-fill"></div></div></div></td>
+            <td class="mono"></td>
+            <td class="mono"></td>
+            <td class="mono"></td>
+            <td class="mono"></td>`;
+          tbody.appendChild(tr);
+          rowMap.set(c.Name, tr);
+        }
+        const cc = tr.cells;
+        tx(cc[0], c.Name || '');
+
+        const cpu = parseFloat(c.CPUPerc) || 0;
+        cc[1].querySelector('.mini-bar-val').textContent = c.CPUPerc || '—';
+        const bf1 = cc[1].querySelector('.mini-bar-fill');
+        bf1.style.width = Math.min(cpu, 100).toFixed(1) + '%';
+        bf1.className = 'mini-bar-fill ' + lvl(cpu);
+
+        const mem = parseFloat(c.MemPerc) || 0;
+        cc[2].querySelector('.mini-bar-val').textContent = c.MemPerc || '—';
+        const bf2 = cc[2].querySelector('.mini-bar-fill');
+        bf2.style.width = Math.min(mem, 100).toFixed(1) + '%';
+        bf2.className = 'mini-bar-fill ' + lvl(mem);
+
+        tx(cc[3], c.MemUsage || '—');
+        tx(cc[4], c.NetIO    || '—');
+        tx(cc[5], c.BlockIO  || '—');
+        tx(cc[6], c.PIDs     || '—');
+      }
+    }
+
+    function connect() {
+      const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+      ws = new WebSocket(proto + '://' + location.host);
+      ws.onopen  = () => { retryMs = 1000; setLive(true); };
+      ws.onclose = () => {
+        setLive(false);
+        setTimeout(connect, retryMs);
+        retryMs = Math.min(retryMs * 2, 10000);
+      };
+      ws.onmessage = e => {
+        try { lastPayload = JSON.parse(e.data); } catch { return; }
+        if (!document.hidden) applyPayload(lastPayload);
+      };
+      document.addEventListener('visibilitychange', () => {
+        if (!document.hidden && lastPayload) applyPayload(lastPayload);
+      });
+    }
+
+    connect();
+  })();
+
+  function copyToken(btn) {
+    const token = btn.dataset.token;
+    navigator.clipboard.writeText(token).then(() => {
+      btn.textContent = 'Copied!';
+      btn.classList.add('copied');
+      setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 2500);
+    });
+  }
+  </script>
+</body>
+</html>

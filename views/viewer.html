@@ -318,16 +318,15 @@
     .nm { font-weight: 500; color: var(--text); max-width: 175px; overflow: hidden; text-overflow: ellipsis; }
     .mono { font-family: 'JetBrains Mono', monospace; font-size: .75rem; color: var(--muted2); }
 
-    .bc { display: flex; align-items: center; gap: .5rem; min-width: 120px; }
-    .bv { font-family: 'JetBrains Mono', monospace; font-size: .75rem; font-weight: 500; min-width: 52px; color: var(--text); }
-    .bt { flex: 1; height: 4px; background: rgba(255,255,255,.06); border-radius: 100px; overflow: hidden; min-width: 50px; }
+    .bc { display: flex; align-items: center; gap: .45rem; min-width: 110px; }
+    .bv { font-family: 'JetBrains Mono', monospace; font-size: .73rem; font-weight: 500; min-width: 48px; }
+    .bt { flex: 1; height: 3px; background: rgba(255,255,255,.06); border-radius: 100px; overflow: hidden; min-width: 44px; }
     .bf { height: 100%; border-radius: 100px; transition: width .45s ease, background-color .45s ease; }
 
-    /* Bar fill colors — only applied to .bf, never to .bv */
-    .lv-ok   { background: var(--green); }
-    .lv-warn { background: var(--yellow); }
-    .lv-crit { background: var(--red); }
-    .lv-nil  { background: rgba(255,255,255,.1); }
+    .lv-ok   { background: var(--green);  color: var(--green); }
+    .lv-warn { background: var(--yellow); color: var(--yellow); }
+    .lv-crit { background: var(--red);    color: var(--red); }
+    .lv-nil  { background: var(--muted);  color: var(--muted); }
 
     .pids { text-align: center; }
 
@@ -423,73 +422,65 @@
 
     /* ── RESPONSIVE ──────────────────────────────────── */
 
-    /* ── Tablet ──────────────────────────────── */
-    @media (max-width: 1024px) {
+    /* Tablet: hide secondary header items */
+    @media (max-width: 960px) {
       .ring-info { display: none; }
-    }
-    @media (max-width: 900px) {
       .hdr-clock { display: none; }
-      .hdr-url   { max-width: 130px; }
-      .card-grid { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
+      .hdr-url   { max-width: 140px; }
     }
 
-    /* ── Small tablet / large phone ──────────── */
-    @media (max-width: 700px) {
+    /* Small tablet / large phone */
+    @media (max-width: 720px) {
       #hdr-url-wrap { display: none; }
+      .host-rings { gap: .55rem; }
       .hrg-lbl { display: none; }
-      .host-rings { gap: .5rem; }
+      .card-grid { grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: .7rem; padding: .85rem; }
       .chip-lbl { display: none; }
-      .card-grid { grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: .65rem; padding: .85rem; }
     }
 
-    /* ── Mobile ──────────────────────────────── */
-    @media (max-width: 540px) {
+    /* Mobile */
+    @media (max-width: 560px) {
       /* Login */
-      .login-card { padding: 1.75rem 1.25rem; border-radius: 13px; }
+      .login-card { padding: 1.75rem 1.25rem; border-radius: 14px; }
       .brand-text h1 { font-size: .95rem; }
-      .btn-primary { font-size: .82rem; }
 
-      /* Header */
-      .hdr { flex-wrap: wrap; padding: .5rem .85rem; row-gap: .3rem; min-height: unset; }
+      /* Header: collapse to 2 visual groups */
+      .hdr { flex-wrap: wrap; padding: .55rem .85rem; row-gap: 0; min-height: unset; }
+      .hdr > * { margin: .22rem 0; }
       .host-rings { display: none !important; }
       .vr { display: none; }
       .hdr-brand span { font-size: .82rem; }
-      .btn-disc { padding: .25rem .55rem; font-size: .7rem; min-height: 32px; }
+      .btn-disc { padding: .25rem .55rem; font-size: .7rem; min-height: 30px; }
       .live-pill { padding: .2rem .5rem; font-size: .7rem; }
 
       /* Toolbar */
-      .toolbar { padding: .5rem .85rem; row-gap: .45rem; flex-wrap: wrap; }
-      .search-box { max-width: 100%; flex: 1 1 100%; order: -1; }
+      .toolbar { padding: .45rem .85rem; row-gap: .4rem; }
+      .search-box { max-width: 100%; flex: 1 1 100%; order: 0; }
       .tb-spacer { display: none; }
-      .ago { font-size: .68rem; }
+      .ago { order: 2; font-size: .68rem; }
+      .view-toggle { order: 1; }
+      .chip { order: 3; padding: .18rem .45rem; font-size: .7rem; }
       .chip-lbl { display: none; }
-      .chip { padding: .2rem .5rem; }
-
-      /* Table */
-      thead th { padding: .5rem .65rem; font-size: .63rem; }
-      tbody td  { padding: .45rem .65rem; font-size: .76rem; }
-      .bc { min-width: 90px; }
-      .bt { min-width: 36px; }
-      .bv { font-size: .7rem; min-width: 42px; }
 
       /* Cards */
-      .card-grid { grid-template-columns: 1fr 1fr; gap: .6rem; padding: .65rem; }
-      .c-card { padding: .8rem; gap: .6rem; border-radius: 10px; }
-      .cc-name { font-size: .78rem; }
-      .ring-lg { width: 46px; height: 46px; }
-      .ring-lg svg { width: 46px; height: 46px; }
-      .ring-lg .ring-val { font-size: .6rem; }
-      .cc-stat-lbl { font-size: .56rem; }
-      .cc-stat-val { font-size: .66rem; }
-      .cc-spark { height: 24px; }
-      .cc-badge { display: none; }
+      .card-grid {
+        grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+        gap: .6rem; padding: .7rem;
+      }
+      .c-card { padding: .8rem; gap: .65rem; border-radius: 10px; }
+      .cc-name { font-size: .8rem; }
+      .ring-lg { width: 48px; height: 48px; }
+      .ring-lg svg { width: 48px; height: 48px; }
+      .ring-lg .ring-val { font-size: .62rem; }
+      .cc-stat-lbl { font-size: .57rem; }
+      .cc-stat-val { font-size: .67rem; }
+      .cc-spark { height: 26px; }
     }
 
-    /* ── Very small phones ───────────────────── */
-    @media (max-width: 360px) {
-      .card-grid { grid-template-columns: 1fr; gap: .5rem; }
+    /* Very small phones */
+    @media (max-width: 380px) {
+      .card-grid { grid-template-columns: 1fr 1fr; gap: .5rem; padding: .6rem; }
       #chip-cpu, #chip-ram { display: none; }
-      .hdr-brand span { display: none; }
     }
   </style>
 </head>
@@ -1012,13 +1003,13 @@ function renderTable(sorted, vis, totalCpu, totalBytes) {
 
     const cl = lvl(cpu);
     cc[1].querySelector('.bv').textContent = c.CPUPerc;
-    cc[1].querySelector('.bv').className   = 'bv';
+    cc[1].querySelector('.bv').className   = 'bv ' + cl;
     cc[1].querySelector('.bf').style.width = Math.min(cpu, 100).toFixed(1) + '%';
     cc[1].querySelector('.bf').className   = 'bf ' + cl;
 
     const ml = lvl(mem);
     cc[2].querySelector('.bv').textContent = c.MemPerc;
-    cc[2].querySelector('.bv').className   = 'bv';
+    cc[2].querySelector('.bv').className   = 'bv ' + ml;
     cc[2].querySelector('.bf').style.width = Math.min(mem, 100).toFixed(1) + '%';
     cc[2].querySelector('.bf').className   = 'bf ' + ml;
 
@@ -1042,7 +1033,7 @@ function renderTable(sorted, vis, totalCpu, totalBytes) {
   const avgCpu = sorted.length ? totalCpu / sorted.length : 0;
   const tc = totRow.cells;
   tc[0].textContent = `${sorted.length} container${sorted.length !== 1 ? 's' : ''}`;
-  tc[1].innerHTML   = `<div class="bc"><span class="bv">${totalCpu.toFixed(1)}%</span><div class="bt"><div class="bf ${lvl(avgCpu)}" style="width:${Math.min(avgCpu,100).toFixed(1)}%"></div></div></div>`;
+  tc[1].innerHTML   = `<div class="bc"><span class="bv ${lvl(totalCpu)}">${totalCpu.toFixed(1)}%</span><div class="bt"><div class="bf ${lvl(avgCpu)}" style="width:${Math.min(avgCpu,100).toFixed(1)}%"></div></div></div>`;
   tc[3].textContent = fmtBytes(totalBytes);
 }
 
