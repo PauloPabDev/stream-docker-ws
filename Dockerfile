@@ -11,5 +11,7 @@ WORKDIR /app
 RUN mkdir -p /app/data
 COPY --from=builder /app/node_modules ./node_modules
 COPY server.js admin.js db.js ./
+COPY views ./views
+COPY public ./public
 EXPOSE 8081
 CMD ["node", "server.js"]
