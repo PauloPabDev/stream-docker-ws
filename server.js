@@ -1,5 +1,4 @@
-import { createServer } from "node:http";
-import { spawn } from "child_process";
+import { createServer, request as httpRequest } from "node:http";
 import { readFileSync } from "node:fs";
 import { WebSocketServer } from "ws";
 import { networkInterfaces, totalmem, freemem } from "os";
@@ -43,6 +42,7 @@ httpServer.listen(PORT, () => {
   console.log(`Admin panel: http://localhost:${PORT}/`);
 });
 
+// --- Host CPU via /proc/stat ---
 let prevCpu = null;
 
 function getCpuPercent() {
@@ -64,10 +64,12 @@ function getCpuPercent() {
   }
 }
 
-function fmtBytes(bytes) {
-  if (bytes >= 1024 ** 3) return (bytes / 1024 ** 3).toFixed(2) + "GiB";
-  if (bytes >= 1024 ** 2) return (bytes / 1024 ** 2).toFixed(2) + "MiB";
-  return (bytes / 1024).toFixed(2) + "KiB";
+function fmtBytes(b) {
+  b = Number(b) || 0;
+  if (b >= 1024 ** 3) return (b / 1024 ** 3).toFixed(2) + "GiB";
+  if (b >= 1024 ** 2) return (b / 1024 ** 2).toFixed(2) + "MiB";
+  if (b >= 1024) return (b / 1024).toFixed(2) + "KiB";
+  return b + "B";
 }
 
 function getHostStats() {
@@ -82,8 +84,99 @@ function getHostStats() {
   };
 }
 
-// Single shared broadcast loop — one docker process for ALL clients.
-// Starts on first connection, stops when last client disconnects.
+// --- Docker API over Unix socket (no subprocess) ---
+const DOCKER_SOCKET = process.env.DOCKER_SOCKET || "/var/run/docker.sock";
+
+function dockerGet(path) {
+  return new Promise((resolve, reject) => {
+    const req = httpRequest(
+      { socketPath: DOCKER_SOCKET, path, method: "GET" },
+      (res) => {
+        let data = "";
+        res.on("data", (chunk) => { data += chunk; });
+        res.on("end", () => {
+          try { resolve(JSON.parse(data)); }
+          catch (e) { reject(e); }
+        });
+      }
+    );
+    req.on("error", reject);
+    req.end();
+  });
+}
+
+function parseContainerStats(container, s) {
+  const name = (container.Names?.[0] ?? container.Id?.slice(0, 12) ?? "?").replace(/^\//, "");
+
+  // CPU % — delta between current and previous sample
+  const cpuDelta =
+    (s.cpu_stats?.cpu_usage?.total_usage ?? 0) -
+    (s.precpu_stats?.cpu_usage?.total_usage ?? 0);
+  const systemDelta =
+    (s.cpu_stats?.system_cpu_usage ?? 0) -
+    (s.precpu_stats?.system_cpu_usage ?? 0);
+  const numCpus =
+    s.cpu_stats?.online_cpus ??
+    s.cpu_stats?.cpu_usage?.percpu_usage?.length ??
+    1;
+  const cpuPct = systemDelta > 0 ? (cpuDelta / systemDelta) * numCpus * 100 : 0;
+
+  // Memory (exclude page cache)
+  const cache =
+    s.memory_stats?.stats?.cache ??
+    s.memory_stats?.stats?.inactive_file ??
+    0;
+  const memUsage = Math.max(0, (s.memory_stats?.usage ?? 0) - cache);
+  const memLimit = s.memory_stats?.limit ?? 0;
+  const memPct = memLimit > 0 ? (memUsage / memLimit) * 100 : 0;
+
+  // Network I/O — sum all interfaces
+  const nets = Object.values(s.networks ?? {});
+  const netRx = nets.reduce((a, n) => a + (n.rx_bytes ?? 0), 0);
+  const netTx = nets.reduce((a, n) => a + (n.tx_bytes ?? 0), 0);
+
+  // Block I/O
+  const blk = s.blkio_stats?.io_service_bytes_recursive ?? [];
+  const blkRead = blk
+    .filter((x) => x.op?.toLowerCase() === "read")
+    .reduce((a, x) => a + (x.value ?? 0), 0);
+  const blkWrite = blk
+    .filter((x) => x.op?.toLowerCase() === "write")
+    .reduce((a, x) => a + (x.value ?? 0), 0);
+
+  return {
+    Name: name,
+    CPUPerc: cpuPct.toFixed(2) + "%",
+    MemUsage: fmtBytes(memUsage) + " / " + fmtBytes(memLimit),
+    MemPerc: memPct.toFixed(2) + "%",
+    NetIO: fmtBytes(netRx) + " / " + fmtBytes(netTx),
+    BlockIO: fmtBytes(blkRead) + " / " + fmtBytes(blkWrite),
+    PIDs: String(s.pids_stats?.current ?? 0),
+  };
+}
+
+async function getDockerStats() {
+  const containers = await dockerGet("/containers/json");
+  if (!containers.length) return [];
+
+  // Fetch all container stats in parallel — one-shot=true returns immediately
+  // without waiting for a 1s delta window (Docker API v1.41+)
+  const results = await Promise.allSettled(
+    containers.map(async (c) => {
+      const s = await dockerGet(
+        `/containers/${c.Id}/stats?stream=false&one-shot=true`
+      );
+      return parseContainerStats(c, s);
+    })
+  );
+
+  return results
+    .filter((r) => r.status === "fulfilled")
+    .map((r) => r.value);
+}
+
+// --- Shared broadcast loop ---
+// Single loop shared by all clients. Stops when no clients are connected.
 const INTERVAL = parseInt(process.env.STATS_INTERVAL || "2000", 10);
 let broadcastRunning = false;
 let broadcastTimer = null;
@@ -92,33 +185,22 @@ function scheduleBroadcast() {
   if (broadcastRunning) return;
   broadcastRunning = true;
 
-  function runOnce() {
+  async function runOnce() {
     if (wss.clients.size === 0) {
-      clearTimeout(broadcastTimer);
       broadcastTimer = null;
       broadcastRunning = false;
       return;
     }
 
-    const proc = spawn("docker", ["stats", "--no-stream", "--format", "{{json .}}"]);
-    let output = "";
-    proc.stdout.on("data", (d) => { output += d.toString(); });
-    proc.on("close", () => {
-      if (wss.clients.size > 0) {
-        try {
-          const containers = output
-            .split("\n")
-            .filter((l) => l.trim())
-            .map((l) => JSON.parse(l));
-          const payload = JSON.stringify({ containers, host: getHostStats() });
-          for (const client of wss.clients) {
-            if (client.readyState === 1) client.send(payload);
-          }
-        } catch { /* ignore parse errors */ }
+    try {
+      const containers = await getDockerStats();
+      const payload = JSON.stringify({ containers, host: getHostStats() });
+      for (const client of wss.clients) {
+        if (client.readyState === 1) client.send(payload);
       }
-      broadcastTimer = setTimeout(runOnce, INTERVAL);
-    });
-    proc.on("error", () => { broadcastTimer = setTimeout(runOnce, INTERVAL); });
+    } catch { /* ignore transient errors */ }
+
+    broadcastTimer = setTimeout(runOnce, INTERVAL);
   }
 
   runOnce();

@@ -1,17 +1,15 @@
-FROM node:22-alpine
-
-# docker-cli: docker stats | python3/make/g++: native addon compilation
-RUN apk add --no-cache docker-cli python3 make g++
-
+# Stage 1: compilar better-sqlite3 (addon nativo)
+FROM node:22-alpine AS builder
+RUN apk add --no-cache python3 make g++
 WORKDIR /app
-
-RUN mkdir -p /app/data
-
 COPY package.json package-lock.json* ./
 RUN npm install --omit=dev
 
+# Stage 2: imagen de runtime — sin build tools, sin docker-cli
+FROM node:22-alpine
+WORKDIR /app
+RUN mkdir -p /app/data
+COPY --from=builder /app/node_modules ./node_modules
 COPY server.js admin.js db.js ./
-
 EXPOSE 8081
-
 CMD ["node", "server.js"]
