@@ -82,35 +82,52 @@ function getHostStats() {
   };
 }
 
+// Single shared broadcast loop — one docker process for ALL clients.
+// Starts on first connection, stops when last client disconnects.
+const INTERVAL = parseInt(process.env.STATS_INTERVAL || "2000", 10);
+let broadcastRunning = false;
+let broadcastTimer = null;
+
+function scheduleBroadcast() {
+  if (broadcastRunning) return;
+  broadcastRunning = true;
+
+  function runOnce() {
+    if (wss.clients.size === 0) {
+      clearTimeout(broadcastTimer);
+      broadcastTimer = null;
+      broadcastRunning = false;
+      return;
+    }
+
+    const proc = spawn("docker", ["stats", "--no-stream", "--format", "{{json .}}"]);
+    let output = "";
+    proc.stdout.on("data", (d) => { output += d.toString(); });
+    proc.on("close", () => {
+      if (wss.clients.size > 0) {
+        try {
+          const containers = output
+            .split("\n")
+            .filter((l) => l.trim())
+            .map((l) => JSON.parse(l));
+          const payload = JSON.stringify({ containers, host: getHostStats() });
+          for (const client of wss.clients) {
+            if (client.readyState === 1) client.send(payload);
+          }
+        } catch { /* ignore parse errors */ }
+      }
+      broadcastTimer = setTimeout(runOnce, INTERVAL);
+    });
+    proc.on("error", () => { broadcastTimer = setTimeout(runOnce, INTERVAL); });
+  }
+
+  runOnce();
+}
+
 wss.on("connection", (ws) => {
   console.log("Cliente conectado");
-
-  const sendStats = () => {
-    const dockerStats = spawn("docker", [
-      "stats",
-      "--no-stream",
-      "--format",
-      "{{json .}}",
-    ]);
-
-    let output = "";
-    dockerStats.stdout.on("data", (data) => {
-      output += data.toString();
-    });
-
-    dockerStats.on("close", () => {
-      const containers = output
-        .split("\n")
-        .filter((l) => l.trim().length > 0)
-        .map((l) => JSON.parse(l));
-      ws.send(JSON.stringify({ containers, host: getHostStats() }));
-    });
-  };
-
-  const interval = setInterval(sendStats, 1000);
-
+  scheduleBroadcast();
   ws.on("close", () => {
-    clearInterval(interval);
     console.log("Cliente desconectado");
   });
 });

@@ -394,34 +394,69 @@
       return (b / 1024).toFixed(2) + 'KiB';
     }
 
+    const rowMap = new Map(); // containerName -> <tr>
+
+    function setText(el, val) {
+      if (el.textContent !== val) el.textContent = val;
+    }
+
+    function setHtml(el, val) {
+      if (el.innerHTML !== val) el.innerHTML = val;
+    }
+
     function renderRows(data) {
       if (!data.length) {
         tbody.innerHTML = '<tr id="empty-row"><td colspan="7">Sin contenedores activos</td></tr>';
+        rowMap.clear();
         return;
       }
-      const totalCpu = data.reduce((s, c) => s + pct(c.CPUPerc), 0);
-      const totalMem = data.reduce((s, c) => s + parseMemBytes((c.MemUsage || '').split('/')[0].trim()), 0);
-      const rows = data.map(c => {
+
+      const emptyRow = document.getElementById('empty-row');
+      if (emptyRow) emptyRow.remove();
+
+      const seen = new Set(data.map(c => c.Name));
+      for (const [name, row] of rowMap) {
+        if (!seen.has(name)) { row.remove(); rowMap.delete(name); }
+      }
+
+      let totalRow = document.getElementById('total-row');
+      if (!totalRow) {
+        totalRow = document.createElement('tr');
+        totalRow.id = 'total-row';
+        totalRow.style.cssText = 'border-top:2px solid #58a6ff;font-weight:600;color:#f0f6fc;background:#0d1117';
+        totalRow.innerHTML = '<td></td><td></td><td>—</td><td></td><td colspan="3"></td>';
+        tbody.appendChild(totalRow);
+      }
+
+      let totalCpu = 0, totalMem = 0;
+
+      for (const c of data) {
         const cpu = pct(c.CPUPerc);
         const mem = pct(c.MemPerc);
-        return `<tr>
-          <td class="name-cell">${esc(c.Name)}</td>
-          <td>${esc(c.CPUPerc)}${bar(cpu, 'cpu-bar')}</td>
-          <td>${esc(c.MemPerc)}${bar(mem, 'mem-bar')}</td>
-          <td>${esc(c.MemUsage)}</td>
-          <td>${esc(c.NetIO)}</td>
-          <td>${esc(c.BlockIO)}</td>
-          <td>${esc(c.PIDs)}</td>
-        </tr>`;
-      }).join('');
-      const totalRow = `<tr style="border-top:2px solid #58a6ff;font-weight:600;color:#f0f6fc;background:#0d1117">
-        <td>TOTAL (${data.length})</td>
-        <td>${totalCpu.toFixed(1)}%</td>
-        <td>—</td>
-        <td>${fmtBytes(totalMem)}</td>
-        <td colspan="3"></td>
-      </tr>`;
-      tbody.innerHTML = rows + totalRow;
+        totalCpu += cpu;
+        totalMem += parseMemBytes((c.MemUsage || '').split('/')[0].trim());
+
+        let row = rowMap.get(c.Name);
+        if (!row) {
+          row = document.createElement('tr');
+          row.innerHTML = '<td class="name-cell"></td><td></td><td></td><td></td><td></td><td></td><td></td>';
+          tbody.insertBefore(row, totalRow);
+          rowMap.set(c.Name, row);
+        }
+
+        const cells = row.cells;
+        setText(cells[0], c.Name || '');
+        setHtml(cells[1], esc(c.CPUPerc) + bar(cpu, 'cpu-bar'));
+        setHtml(cells[2], esc(c.MemPerc) + bar(mem, 'mem-bar'));
+        setText(cells[3], c.MemUsage || '');
+        setText(cells[4], c.NetIO || '');
+        setText(cells[5], c.BlockIO || '');
+        setText(cells[6], c.PIDs || '');
+      }
+
+      setText(totalRow.cells[0], `TOTAL (${data.length})`);
+      setText(totalRow.cells[1], totalCpu.toFixed(1) + '%');
+      setText(totalRow.cells[3], fmtBytes(totalMem));
     }
 
     function esc(s) {
@@ -525,22 +560,37 @@
 
       ws.onerror = () => {};
 
-      ws.onmessage = (e) => {
-        let payload;
-        try { payload = JSON.parse(e.data); } catch { return; }
+      let lastPayload = null;
+
+      function fmtTime(d) {
+        return String(d.getHours()).padStart(2,'0') + ':' +
+               String(d.getMinutes()).padStart(2,'0') + ':' +
+               String(d.getSeconds()).padStart(2,'0');
+      }
+
+      function applyPayload(payload) {
         const containers = Array.isArray(payload) ? payload : (payload.containers || []);
         const host = payload.host || null;
         if (host) {
-          const bar = document.getElementById('host-bar');
-          bar.style.display = 'flex';
+          const hostBar = document.getElementById('host-bar');
+          hostBar.style.display = 'flex';
           document.getElementById('h-cpu').textContent = host.cpuPercent;
           document.getElementById('h-mem-used').textContent = host.memUsed;
           document.getElementById('h-mem-total').textContent = host.memTotal;
           document.getElementById('h-mem-pct').textContent = host.memPercent;
         }
         renderRows(containers);
-        lastUpdate.textContent = 'actualizado ' + new Date().toLocaleTimeString();
+        lastUpdate.textContent = 'actualizado ' + fmtTime(new Date());
+      }
+
+      ws.onmessage = (e) => {
+        try { lastPayload = JSON.parse(e.data); } catch { return; }
+        if (!document.hidden) applyPayload(lastPayload);
       };
+
+      document.addEventListener('visibilitychange', () => {
+        if (!document.hidden && lastPayload) applyPayload(lastPayload);
+      });
     }
 
     function disconnect() {

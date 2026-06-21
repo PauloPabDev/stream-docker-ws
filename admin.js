@@ -268,9 +268,12 @@ function renderDashboard(session, tokens, newToken = null) {
             setTimeout(connect, retryMs);
             retryMs = Math.min(retryMs * 2, 10000);
           };
-          ws.onmessage = (e) => {
-            let payload;
-            try { payload = JSON.parse(e.data); } catch { return; }
+          const rowMap = new Map();
+          let lastPayload = null;
+
+          function setText(el, val) { if (el.textContent !== val) el.textContent = val; }
+
+          function applyPayload(payload) {
             const containers = Array.isArray(payload) ? payload : (payload.containers || []);
             const host = payload.host || null;
             if (host) {
@@ -281,28 +284,62 @@ function renderDashboard(session, tokens, newToken = null) {
             }
             if (!containers.length) {
               tbody.innerHTML = '<tr><td colspan="7" style="color:#8b949e;text-align:center">Sin contenedores activos</td></tr>';
+              rowMap.clear();
               return;
             }
-            const totalCpu = containers.reduce((s, c) => s + parseFloat(c.CPUPerc || 0), 0);
-            const totalMem = containers.reduce((s, c) => s + parseMemBytes((c.MemUsage || '').split('/')[0].trim()), 0);
-            const rows = containers.map(c => \`<tr>
-              <td>\${c.Name}</td>
-              <td>\${c.CPUPerc}</td>
-              <td>\${c.MemPerc}</td>
-              <td>\${c.MemUsage}</td>
-              <td>\${c.NetIO}</td>
-              <td>\${c.BlockIO}</td>
-              <td>\${c.PIDs}</td>
-            </tr>\`).join('');
-            const totalRow = \`<tr style="border-top:2px solid #58a6ff;font-weight:600;color:#f0f6fc">
-              <td>TOTAL (\${containers.length})</td>
-              <td>\${totalCpu.toFixed(1)}%</td>
-              <td>—</td>
-              <td>\${fmtBytes(totalMem)}</td>
-              <td colspan="3"></td>
-            </tr>\`;
-            tbody.innerHTML = rows + totalRow;
+
+            const emptyRow = tbody.querySelector('td[colspan="7"]');
+            if (emptyRow) emptyRow.closest('tr').remove();
+
+            const seen = new Set(containers.map(c => c.Name));
+            for (const [name, row] of rowMap) {
+              if (!seen.has(name)) { row.remove(); rowMap.delete(name); }
+            }
+
+            let totalRow = tbody.querySelector('#a-total-row');
+            if (!totalRow) {
+              totalRow = document.createElement('tr');
+              totalRow.id = 'a-total-row';
+              totalRow.style.cssText = 'border-top:2px solid #58a6ff;font-weight:600;color:#f0f6fc';
+              totalRow.innerHTML = '<td></td><td></td><td>—</td><td></td><td colspan="3"></td>';
+              tbody.appendChild(totalRow);
+            }
+
+            let totalCpu = 0, totalMem = 0;
+            for (const c of containers) {
+              totalCpu += parseFloat(c.CPUPerc || 0);
+              totalMem += parseMemBytes((c.MemUsage || '').split('/')[0].trim());
+
+              let row = rowMap.get(c.Name);
+              if (!row) {
+                row = document.createElement('tr');
+                row.innerHTML = '<td></td><td></td><td></td><td></td><td></td><td></td><td></td>';
+                tbody.insertBefore(row, totalRow);
+                rowMap.set(c.Name, row);
+              }
+              const cells = row.cells;
+              setText(cells[0], c.Name || '');
+              setText(cells[1], c.CPUPerc || '');
+              setText(cells[2], c.MemPerc || '');
+              setText(cells[3], c.MemUsage || '');
+              setText(cells[4], c.NetIO || '');
+              setText(cells[5], c.BlockIO || '');
+              setText(cells[6], c.PIDs || '');
+            }
+
+            setText(totalRow.cells[0], \`TOTAL (\${containers.length})\`);
+            setText(totalRow.cells[1], totalCpu.toFixed(1) + '%');
+            setText(totalRow.cells[3], fmtBytes(totalMem));
+          }
+
+          ws.onmessage = (e) => {
+            try { lastPayload = JSON.parse(e.data); } catch { return; }
+            if (!document.hidden) applyPayload(lastPayload);
           };
+
+          document.addEventListener('visibilitychange', () => {
+            if (!document.hidden && lastPayload) applyPayload(lastPayload);
+          });
         }
 
         connect();
